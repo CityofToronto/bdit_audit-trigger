@@ -15,6 +15,7 @@ CREATE TABLE gis.logged_actions (
 );
 
 REVOKE ALL ON gis.logged_actions FROM public;
+GRANT SELECT ON gis.logged_actions TO bdit_humans;
 
 COMMENT ON TABLE gis.logged_actions IS 'History of auditable actions on audited tables, from gis.if_modified_func()';
 COMMENT ON COLUMN gis.logged_actions.event_id IS 'Unique identifier for each auditable event';
@@ -22,10 +23,8 @@ COMMENT ON COLUMN gis.logged_actions.schema_name IS 'Database schema audited tab
 COMMENT ON COLUMN gis.logged_actions.table_name IS 'Non-schema-qualified table name of table event occured in';
 COMMENT ON COLUMN gis.logged_actions.relid IS 'Table OID. Changes with drop/create. Get with ''tablename''::regclass';
 COMMENT ON COLUMN gis.logged_actions.session_user_name IS 'Login / session user whose statement caused the audited event';
-COMMENT ON COLUMN gis.logged_actions.action_tstamp_tx IS 'Transaction start timestamp for tx in which audited event occurred';
-COMMENT ON COLUMN gis.logged_actions.action_tstamp_stm IS 'Statement start timestamp for tx in which audited event occurred';
 COMMENT ON COLUMN gis.logged_actions.action_tstamp_clk IS 'Wall clock time at which audited event''s trigger call occurred';
-COMMENT ON COLUMN gis.logged_actions.transaction_id IS 'Identifier of transaction that made the change. May wrap, but unique paired with action_tstamp_tx.';
+COMMENT ON COLUMN gis.logged_actions.transaction_id IS 'Identifier of transaction that made the change. May wrap, but unique paired.';
 COMMENT ON COLUMN gis.logged_actions.client_query IS 'Top-level query that caused this auditable event. May be more than one statement.';
 COMMENT ON COLUMN gis.logged_actions.application_name IS 'Application name set when this audit event occurred. Can be changed in-session by client.';
 COMMENT ON COLUMN gis.logged_actions.action IS 'Action type; I = insert, D = delete, U = update, T = truncate';
@@ -33,9 +32,9 @@ COMMENT ON COLUMN gis.logged_actions.row_data IS 'Record value. Null for stateme
 COMMENT ON COLUMN gis.logged_actions.changed_fields IS 'New values of fields changed by UPDATE. Null except for row-level UPDATE events.';
 COMMENT ON COLUMN gis.logged_actions.statement_only IS '''t'' if audit event is from an FOR EACH STATEMENT trigger, ''f'' for FOR EACH ROW';
 
---CREATE INDEX logged_actions_relid_idx ON gis.logged_actions(relid);
---CREATE INDEX logged_actions_action_tstamp_tx_stm_idx ON gis.logged_actions(action_tstamp_stm);
---CREATE INDEX logged_actions_action_idx ON gis.logged_actions(action);
+CREATE INDEX ON gis.logged_actions(table_name);
+CREATE INDEX ON gis.logged_actions  USING brin(action_tstamp_clk);
+CREATE INDEX logged_actions_action_idx ON gis.logged_actions(action);
 
 CREATE OR REPLACE FUNCTION gis.if_modified_func() RETURNS TRIGGER AS $body$
 DECLARE
@@ -199,13 +198,13 @@ COMMENT ON FUNCTION gis.audit_table(regclass) IS $body$
 Add auditing support to the given table. Row-level changes will be logged with full client query text. No cols are ignored.
 $body$;
 
-CREATE OR REPLACE VIEW gis.tableslist AS 
+CREATE OR REPLACE VIEW gis.audited_tables_list AS 
  SELECT DISTINCT triggers.trigger_schema AS schema,
     triggers.event_object_table AS auditedtable
    FROM information_schema.triggers
     WHERE triggers.trigger_name::text IN ('audit_trigger_row'::text, 'audit_trigger_stm'::text)  
 ORDER BY schema, auditedtable;
 
-COMMENT ON VIEW gis.tableslist IS $body$
+COMMENT ON VIEW gis.audited_tables_list IS $body$
 View showing all tables with auditing set up. Ordered by schema, then table.
 $body$;
